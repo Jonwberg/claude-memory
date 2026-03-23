@@ -1,0 +1,15 @@
+# Memory
+
+## Project: competitor_intel
+- Location: `C:\Users\Jon Berg\Projects\competitor_intel`
+- Python package installed editable, CLI: `python -m competitor_intel.cli`
+- SQLite DB at `data/competitor_intel.db` — 42K+ products from 4 Shopify stores
+- `pyproject.toml` build-backend must be `setuptools.build_meta` (not `setuptools.backends._legacy`)
+
+## Key Patterns
+- SQLite locks if multiple processes write concurrently — run scrapers sequentially
+- Shopify /products.json caps at ~page 100 — need max_pages safety limit
+- Shopify variant.sku can be null — use `v.get("sku") or ""` not `v.get("sku", "")`
+- Module-level `__getattr__` for lazy imports works but don't also add `@property`
+- `pip install` scripts go to `AppData\Roaming\Python\Python312\Scripts` — not on PATH
+- Git not configured globally on this machine (no user.email/name set)
