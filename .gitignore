@@ -1,3 +1,6 @@
 memory/
 *.tmp
 session-tags.json
+node_modules/
+.index.json.tmp
+MEMORY.md.tmp
