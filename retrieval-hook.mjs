@@ -11,6 +11,32 @@ import {
   readIndexJson, parseMemoryIndex, readMemoryFile, tagOverlap, todayUTC
 } from './memory-utils.mjs';
 
+const CORRECTION_PATTERNS = [
+  /\bthat('s| is| was)?\s+(wrong|incorrect|not right|off|bad)\b/i,
+  /\bno[,.]?\s+(that|this|it)\b/i,
+  /\bthat didn'?t work\b/i,
+  /\bactually[,\s]/i,
+  /\bnot quite\b/i,
+  /\bwrong approach\b/i,
+  /\btry\s+(a\s+)?different\b/i,
+  /\bthat'?s\s+not\s+what\b/i,
+  /\byou\s+(got|have)\s+it\s+wrong\b/i,
+];
+
+const APPROVAL_PATTERNS = [
+  /\b(perfect|excellent|exactly right|that'?s\s+(right|correct|it|perfect))\b/i,
+  /\bthat worked\b/i,
+  /\bwell done\b/i,
+  /\bgreat[,.]?\s+(yes|job|work|thanks)\b/i,
+  /\byes[,!]\s+(exactly|perfect|correct|that'?s\s+it)\b/i,
+];
+
+function detectSignal(prompt) {
+  if (CORRECTION_PATTERNS.some(p => p.test(prompt))) return 'correction';
+  if (APPROVAL_PATTERNS.some(p => p.test(prompt))) return 'approval';
+  return null;
+}
+
 const STOP_WORDS = new Set([
   'a','an','the','and','or','but','in','on','at','to','for','of','with','by',
   'from','up','about','into','through','during','is','are','was','were','be',
@@ -175,12 +201,27 @@ async function main() {
     contextParts.push(`\n### Memory: ${entry.relPath}\n\n${entry.content}`);
   }
 
-  // Persist session tag set and retrieved paths for consolidation hook
+  // Detect correction/approval signal in this prompt and attribute to loaded paths
+  const signal = detectSignal(prompt);
+  const loadedPaths = finalLoad.map(e => e.relPath);
+
+  // Persist session data for consolidation hook — merge with existing if present
   try {
-    const sessionData = {
-      tags: [...sessionTagSet],
-      retrievedPaths: finalLoad.map(e => e.relPath),
-    };
+    let sessionData = { tags: [], retrievedPaths: [], corrections: [], approvals: [] };
+    if (existsSync(SESSION_TAGS_FILE)) {
+      try { sessionData = { ...sessionData, ...JSON.parse(readFileSync(SESSION_TAGS_FILE, 'utf-8')) }; } catch {}
+    }
+    // Merge tags
+    for (const t of sessionTagSet) sessionData.tags.push(t);
+    sessionData.tags = [...new Set(sessionData.tags)];
+    // Merge retrieved paths
+    sessionData.retrievedPaths = [...new Set([...sessionData.retrievedPaths, ...loadedPaths])];
+    // Append signal if detected
+    if (signal === 'correction' && loadedPaths.length > 0) {
+      sessionData.corrections.push({ paths: loadedPaths, prompt: prompt.slice(0, 120) });
+    } else if (signal === 'approval' && loadedPaths.length > 0) {
+      sessionData.approvals.push({ paths: loadedPaths, prompt: prompt.slice(0, 120) });
+    }
     writeFileSync(SESSION_TAGS_FILE, JSON.stringify(sessionData), 'utf-8');
   } catch (err) {
     process.stderr.write('retrieval-hook: failed to write session tags: ' + err.message + '\n');

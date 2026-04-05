@@ -3,13 +3,118 @@
 // Runs after each session via the Stop hook in settings.json.
 // No stdin input required; reads memory directory directly.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, renameSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, renameSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import {
-  MEMORY_DIR, MEMORY_MD, MEMORY_TMP, INDEX_JSON, INDEX_TMP, SESSION_TAGS_FILE,
+  MEMORY_DIR, MEMORY_MD, MEMORY_TMP, INDEX_JSON, INDEX_TMP,
+  SESSION_TAGS_FILE, SESSION_ERRORS_FILE,
   readMemoryFile, writeMemoryFile, scanAllMemoryFiles,
-  tagOverlap, todayUTC, isExpired, buildMemoryIndex, writeIndexJson
+  tagOverlap, todayUTC, addDays, isExpired, buildMemoryIndex, writeIndexJson
 } from './memory-utils.mjs';
+
+// --- Session outcome classification ---
+
+// Returns 'blocked_resolved' | 'blocked_unresolved' | 'exploratory' | 'routine'
+function classifySessionOutcome(sessionErrors, sessionTagSet) {
+  const hasErrors = sessionErrors.errors && sessionErrors.errors.length > 0;
+  if (hasErrors) {
+    // If the Stop hook ran, the session completed — assume errors were resolved
+    return 'blocked_resolved';
+  }
+  // No errors: classify by topic breadth
+  const uniqueTags = sessionTagSet.size;
+  return uniqueTags >= 4 ? 'exploratory' : 'routine';
+}
+
+// Claim extraction threshold per session outcome.
+// Higher = more conservative (only save strong claims).
+// Lower = more aggressive (save everything).
+const OUTCOME_THRESHOLD = {
+  blocked_resolved: 0,    // save all — this session learned something
+  exploratory:      1,    // save medium+ (default)
+  routine:          2,    // save only high-confidence-looking claims
+  blocked_unresolved: Infinity, // skip extraction entirely
+};
+
+// --- Confidence update helpers ---
+
+const CONFIDENCE_ORDER = ['low', 'medium', 'high'];
+
+function demoteConfidence(current) {
+  const idx = CONFIDENCE_ORDER.indexOf(current);
+  return CONFIDENCE_ORDER[Math.max(0, idx - 1)];
+}
+
+function promoteConfidence(current) {
+  const idx = CONFIDENCE_ORDER.indexOf(current);
+  return CONFIDENCE_ORDER[Math.min(CONFIDENCE_ORDER.length - 1, idx + 1)];
+}
+
+// Apply correction signals: demote confidence of affected files.
+function applyCorrections(corrections) {
+  if (!corrections || corrections.length === 0) return;
+  const today = todayUTC();
+  for (const signal of corrections) {
+    for (const relPath of signal.paths || []) {
+      const filePath = join(MEMORY_DIR, relPath);
+      if (!existsSync(filePath)) continue;
+      const file = readMemoryFile(filePath);
+      const current = file.data.confidence || 'medium';
+      const demoted = demoteConfidence(current);
+      if (demoted !== current) {
+        const updated = { ...file.data, confidence: demoted };
+        writeMemoryFile(filePath, updated, file.body);
+        console.error(`[consolidation] Correction signal: demoted ${relPath} confidence ${current} → ${demoted}`);
+      }
+    }
+  }
+}
+
+// Apply approval signals: promote confidence of affected files.
+function applyApprovals(approvals) {
+  if (!approvals || approvals.length === 0) return;
+  for (const signal of approvals) {
+    for (const relPath of signal.paths || []) {
+      const filePath = join(MEMORY_DIR, relPath);
+      if (!existsSync(filePath)) continue;
+      const file = readMemoryFile(filePath);
+      const current = file.data.confidence || 'medium';
+      const promoted = promoteConfidence(current);
+      if (promoted !== current) {
+        const updated = { ...file.data, confidence: promoted };
+        writeMemoryFile(filePath, updated, file.body);
+        console.error(`[consolidation] Approval signal: promoted ${relPath} confidence ${current} → ${promoted}`);
+      }
+    }
+  }
+}
+
+// Write a draft episodic file for unresolved errors so they surface next session.
+function writeDraftErrorEpisodic(sessionErrors) {
+  const episodicDir = join(MEMORY_DIR, 'episodic');
+  mkdirSync(episodicDir, { recursive: true });
+  const today = todayUTC();
+  const slug = 'error-unresolved';
+  const filePath = join(episodicDir, `${today}-${slug}.md`);
+  if (existsSync(filePath)) return; // don't overwrite existing draft
+  const errorSummary = sessionErrors.errors
+    .map(e => `- \`${e.command.slice(0, 80)}\`: ${e.snippet.split('\n')[0].slice(0, 100)}`)
+    .join('\n');
+  const tags = [...new Set(sessionErrors.errors.flatMap(e => e.tags || []))].slice(0, 6);
+  writeMemoryFile(filePath, {
+    type: 'episodic',
+    tags: tags.length ? tags : ['error', 'unresolved'],
+    salience: 'medium',
+    confidence: 'low',
+    source: 'observed',
+    status: 'open',
+    retention: 'temporary',
+    created: today,
+    'last-accessed': today,
+    'decay-after': addDays(today, 14), // shorter decay — resolve or discard quickly
+  }, `## Unresolved errors from session ${today}\n\n${errorSummary}\n\nReview and create Solution entries if patterns emerge.`);
+  console.error(`[consolidation] Wrote unresolved error episodic: ${filePath}`);
+}
 
 const BEHAVIORAL_PATTERNS = [
   /\bdon'?t\b/i, /\bnever\b/i, /\balways\b/i, /\bshould\b/i, /\bmust\b/i,
@@ -91,9 +196,15 @@ function isDuplicate(claim, existingBody) {
 }
 
 // Phase 1: Absorb new/modified episodic files into semantic/procedural.
-function phase1(episodicFiles) {
+// threshold controls minimum claim length — higher = more conservative extraction.
+function phase1(episodicFiles, threshold = 1) {
+  if (threshold === Infinity) {
+    console.error('[consolidation] Phase 1: skipping (blocked_unresolved session)');
+    return;
+  }
+  const minLength = threshold === 0 ? 10 : threshold === 1 ? 15 : 30;
   for (const epFile of episodicFiles) {
-    const claims = extractClaims(epFile.body);
+    const claims = extractClaims(epFile.body).filter(c => c.length >= minLength);
     for (const claim of claims) {
       if (isBehavioral(claim)) {
         absorbToProcedural(claim);
@@ -262,15 +373,16 @@ async function main() {
     unlinkSync(MEMORY_TMP);
     console.error('[consolidation] Deleted stale MEMORY.md.tmp from previous crash');
   }
-  const { INDEX_TMP } = await import('./memory-utils.mjs');
   if (existsSync(INDEX_TMP)) {
     unlinkSync(INDEX_TMP);
     console.error('[consolidation] Deleted stale .index.json.tmp from previous crash');
   }
 
-  // Read session tag set written by retrieval hook at session start.
+  // Read session tag set + correction/approval signals written by retrieval hook.
   let sessionTagSet = new Set();
   let retrievedPaths = [];
+  let corrections = [];
+  let approvals = [];
   try {
     if (existsSync(SESSION_TAGS_FILE)) {
       const sessionData = JSON.parse(readFileSync(SESSION_TAGS_FILE, 'utf-8'));
@@ -279,10 +391,41 @@ async function main() {
       } else {
         (sessionData.tags || []).forEach(t => sessionTagSet.add(t.toLowerCase()));
         retrievedPaths = sessionData.retrievedPaths || [];
+        corrections = sessionData.corrections || [];
+        approvals = sessionData.approvals || [];
       }
       unlinkSync(SESSION_TAGS_FILE);
     }
   } catch {}
+
+  // Read session errors written by error-capture hook.
+  let sessionErrors = { errors: [] };
+  try {
+    if (existsSync(SESSION_ERRORS_FILE)) {
+      sessionErrors = JSON.parse(readFileSync(SESSION_ERRORS_FILE, 'utf-8'));
+      unlinkSync(SESSION_ERRORS_FILE);
+    }
+  } catch {}
+
+  // Classify session outcome.
+  const outcome = classifySessionOutcome(sessionErrors, sessionTagSet);
+  const threshold = OUTCOME_THRESHOLD[outcome] ?? 1;
+  console.error(`[consolidation] Session outcome: ${outcome} (extraction threshold: ${threshold})`);
+
+  // Apply correction/approval confidence signals.
+  if (corrections.length > 0) {
+    console.error(`[consolidation] Applying ${corrections.length} correction signal(s)`);
+    applyCorrections(corrections);
+  }
+  if (approvals.length > 0) {
+    console.error(`[consolidation] Applying ${approvals.length} approval signal(s)`);
+    applyApprovals(approvals);
+  }
+
+  // For blocked_unresolved sessions: write a draft episodic for follow-up.
+  if (outcome === 'blocked_unresolved' && sessionErrors.errors.length > 0) {
+    writeDraftErrorEpisodic(sessionErrors);
+  }
 
   // Get new/modified episodic files (created today or yesterday)
   const today = todayUTC();
@@ -301,8 +444,16 @@ async function main() {
     }
   }
 
-  console.error(`[consolidation] Phase 1: absorbing ${recentEpisodic.length} recent episodic files`);
-  phase1(recentEpisodic);
+  // Tag episodic files with session outcome.
+  for (const epFile of recentEpisodic) {
+    const current = epFile.data['session-outcome'];
+    if (!current) {
+      writeMemoryFile(epFile.path, { ...epFile.data, 'session-outcome': outcome }, epFile.body);
+    }
+  }
+
+  console.error(`[consolidation] Phase 1: absorbing ${recentEpisodic.length} recent episodic files (threshold=${threshold})`);
+  phase1(recentEpisodic, threshold);
 
   console.error('[consolidation] Phase 2: decay pass');
   phase2();

@@ -9,6 +9,7 @@ export const MEMORY_TMP = join(MEMORY_DIR, 'MEMORY.md.tmp');
 export const INDEX_JSON = join(MEMORY_DIR, '.index.json');
 export const INDEX_TMP = join(MEMORY_DIR, '.index.json.tmp');
 export const SESSION_TAGS_FILE = join(MEMORY_DIR, 'session-tags.json');
+export const SESSION_ERRORS_FILE = join(MEMORY_DIR, 'session-errors.json');
 export const MEMORY_CONTEXT_BUDGET_TOKENS = 40000;
 
 // Parse YAML frontmatter from a markdown file.
