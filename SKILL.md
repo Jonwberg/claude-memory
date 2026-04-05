@@ -168,3 +168,36 @@ Before writing: check for existing `## Title` (case-insensitive). Amend in-place
 - Debugging fixes — the fix is in the code
 - Ephemeral task state (current conversation only)
 - Anything already in CLAUDE.md
+
+## Hypothesis Protocol — Reactive Triggering
+
+When an unknown from the world navigation checklist surfaces naturally in a session:
+
+1. **Identify the unknown** — does it map to one of the 11 domains? (perception, memory, environment, causation, feedback, user-model, knowledge, time, action, collaboration, meta-cognition)
+
+2. **Check if already being explored** — call `hypothesis_status()` or `hypothesis_list(domain="...")` via MCP tool
+
+3. **Create a hypothesis if new** — call `hypothesis_create()` with:
+   - A specific, testable question (not vague)
+   - A concrete prediction
+   - Why it matters to this session
+   - The domain
+
+4. **Continue the session** — don't wait for the experiment. The experimenter picks it up in the next cron run.
+
+### When to Create a Hypothesis Mid-Session
+
+Create one when:
+- A bash command behaves unexpectedly and you're not sure why
+- You discover a behavior that contradicts an existing memory
+- The user reveals something about their environment you've never verified
+- You find yourself saying "I'm not sure if..." about something testable
+
+Do NOT create hypotheses for:
+- Things already confirmed in memory (check first)
+- Vague feelings of uncertainty (must be a concrete testable question)
+- Things the user has explicitly told you (observe, don't verify stated facts)
+
+### Hypothesis Depth and Rabbit Holes
+
+Child hypotheses are spawned automatically by the synthesizer. You do not need to manage the tree. If you're curious about the state of an ongoing investigation, use `hypothesis_get(id)` to see the full lineage.
