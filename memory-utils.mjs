@@ -10,6 +10,11 @@ export const INDEX_JSON = join(MEMORY_DIR, '.index.json');
 export const INDEX_TMP = join(MEMORY_DIR, '.index.json.tmp');
 export const SESSION_TAGS_FILE = join(MEMORY_DIR, 'session-tags.json');
 export const SESSION_ERRORS_FILE = join(MEMORY_DIR, 'session-errors.json');
+export const SKILL_DIR = join(homedir(), '.claude', 'skills', 'claude-memory');
+export const HYPOTHESES_DIR = join(MEMORY_DIR, 'hypotheses');
+export const HYPOTHESIS_QUEUE_FILE = join(HYPOTHESES_DIR, 'hypothesis-queue.json');
+export const HYPOTHESIS_LOCK_FILE = join(HYPOTHESES_DIR, 'hypothesis.lock');
+export const NEEDS_REVIEW_FILE = join(HYPOTHESES_DIR, 'needs-review.md');
 export const MEMORY_CONTEXT_BUDGET_TOKENS = 40000;
 
 // Parse YAML frontmatter from a markdown file.
