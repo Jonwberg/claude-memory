@@ -1,6 +1,56 @@
-memory/
+# Temp files
 *.tmp
-session-tags.json
-node_modules/
-.index.json.tmp
 MEMORY.md.tmp
+.index.json.tmp
+
+# Node
+node_modules/
+
+# Credentials and sensitive config
+.credentials.json
+.mcp.json
+settings.json
+settings.local.json
+policy-limits.json
+vercel-plugin-device-id
+vercel-plugin-telemetry-preference
+
+# Ephemeral session and runtime files
+history.jsonl
+stats-cache.json
+scheduled_tasks.lock
+sessions-index.json
+projects/*/session-tags.json
+projects/*/session-errors.json
+
+# Session transcript files (large, ephemeral)
+projects/*/*.jsonl
+projects/*/[0-9a-f]*-[0-9a-f]*/
+
+# Claude Code runtime directories
+backups/
+cache/
+debug/
+file-history/
+paste-cache/
+plans/
+session-env/
+sessions/
+statsig/
+tasks/
+telemetry/
+todos/
+shell-snapshots/
+specs/
+
+# Plugin binaries/data
+plugins/
+
+# Project worktrees (other projects, not memory)
+projects/C--Users-Jon-Berg--claude-skills-claude-memory/
+projects/C--Users-Jon-Berg-Projects-eCommerce-Dev-team/
+projects/C--Users-Jon-Berg-Projects-eCommerce-Dev-team--claude-worktrees-busy-shannon/
+projects/C--Users-Jon-Berg-Projects-oficio-taller-marketing/
+
+# Keep: projects/C--Users-Jon-Berg/memory/** (memory files)
+# Keep: skills/claude-memory/** (memory system scripts)

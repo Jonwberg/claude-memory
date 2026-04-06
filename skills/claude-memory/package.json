@@ -1,0 +1,9 @@
+{
+  "name": "claude-memory",
+  "version": "2.2.0",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.10.0"
+  }
+}

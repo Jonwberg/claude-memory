@@ -1,0 +1,13 @@
+{
+  "max_depth": 7,
+  "max_per_run": 1,
+  "max_tree_width": 5,
+  "experiment_timeout_ms": 120000,
+  "synthesizer_model": "claude-opus-4-6",
+  "experimenter_model": "claude-sonnet-4-6",
+  "min_children_per_result": 2,
+  "max_children_per_result": 5,
+  "lock_stale_after_ms": 600000,
+  "blocked_commands": ["rm -rf", "DROP TABLE", "git push --force", "format", "mkfs", "dd if="],
+  "require_approval_patterns": ["disk", "delete entire", "truncat.*system", "sudo", "registry", "HKEY"]
+}

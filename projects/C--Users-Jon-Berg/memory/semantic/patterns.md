@@ -1,10 +1,13 @@
 ---
 type: semantic
 tags: [shopify, sqlite, python, imports, scraping, pagination, locking]
-salience: high
+salience: medium
+confidence: high
+source: observed
+status: confirmed
 related: [semantic/project-competitor-intel.md]
 created: 2026-03-02
-last-accessed: 2026-03-23
+last-accessed: 2026-04-04
 ---
 
 SQLite locks if multiple processes write concurrently — run scrapers sequentially.

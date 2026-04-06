@@ -1,10 +1,13 @@
 ---
 type: semantic
 tags: [python, developer, windows, competitive-intel, scraping]
-salience: high
+salience: medium
+confidence: high
+source: observed
+status: confirmed
 related: []
 created: 2026-03-02
-last-accessed: 2026-03-23
+last-accessed: 2026-04-04
 ---
 
 Python developer on Windows 11. Primary project: competitor intelligence scraper for Shopify stores.

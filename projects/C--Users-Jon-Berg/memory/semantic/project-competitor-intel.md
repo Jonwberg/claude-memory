@@ -1,10 +1,13 @@
 ---
 type: semantic
 tags: [competitor-intel, shopify, sqlite, scraping, python, cli]
-salience: high
+salience: medium
+confidence: high
+source: observed
+status: confirmed
 related: [semantic/patterns.md]
 created: 2026-03-02
-last-accessed: 2026-03-23
+last-accessed: 2026-04-04
 ---
 
 Project at `C:\Users\Jon Berg\Projects\competitor_intel`.
