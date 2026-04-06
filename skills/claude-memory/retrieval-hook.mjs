@@ -53,8 +53,9 @@ async function searchPinecone(queryText) {
         query: {
           inputs: { text: queryText },
           top_k: TOP_K,
+          filter: { confidence: { '$ne': 'low' } },
         },
-        fields: ['text', 'type', 'domain', 'project', 'salience'],
+        fields: ['text', 'type', 'domain', 'project', 'salience', 'confidence'],
       }),
     }
   );
@@ -85,13 +86,17 @@ async function main() {
 
   // Persist session data for consolidation hook
   try {
-    let sessionData = { retrievedIds: [], corrections: [], approvals: [] };
+    let sessionData = { retrievedIds: [], retrievedRecords: {}, corrections: [], approvals: [] };
     if (existsSync(SESSION_TAGS_FILE)) {
       try {
         sessionData = { ...sessionData, ...JSON.parse(readFileSync(SESSION_TAGS_FILE, 'utf-8')) };
       } catch {}
     }
     sessionData.retrievedIds = [...new Set([...sessionData.retrievedIds, ...hitIds])];
+    // Store full record fields so consolidation can re-upsert without a fetch round-trip
+    for (const hit of hits) {
+      sessionData.retrievedRecords[hit._id] = { ...hit.fields, id: hit._id };
+    }
     const signal = detectSignal(prompt);
     if (signal === 'correction' && hitIds.length > 0) {
       sessionData.corrections.push({ ids: hitIds, prompt: prompt.slice(0, 120) });

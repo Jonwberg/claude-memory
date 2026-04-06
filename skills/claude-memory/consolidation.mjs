@@ -56,6 +56,9 @@ import {
 // Track claims extracted this session for Pinecone upsert
 const newClaims = [];
 
+// Track Pinecone records whose confidence needs updating (Reflexion loop)
+const pineconeConfidenceUpdates = {};
+
 // --- Session outcome classification ---
 
 // Returns 'blocked_resolved' | 'blocked_unresolved' | 'exploratory' | 'routine'
@@ -94,11 +97,11 @@ function promoteConfidence(current) {
   return CONFIDENCE_ORDER[Math.min(CONFIDENCE_ORDER.length - 1, idx + 1)];
 }
 
-// Apply correction signals: demote confidence of affected files.
-function applyCorrections(corrections) {
+// Apply correction signals: demote confidence of affected files and Pinecone records.
+function applyCorrections(corrections, retrievedRecords = {}) {
   if (!corrections || corrections.length === 0) return;
-  const today = todayUTC();
   for (const signal of corrections) {
+    // File-based (legacy paths)
     for (const relPath of signal.paths || []) {
       const filePath = join(MEMORY_DIR, relPath);
       if (!existsSync(filePath)) continue;
@@ -106,18 +109,29 @@ function applyCorrections(corrections) {
       const current = file.data.confidence || 'medium';
       const demoted = demoteConfidence(current);
       if (demoted !== current) {
-        const updated = { ...file.data, confidence: demoted };
-        writeMemoryFile(filePath, updated, file.body);
-        console.error(`[consolidation] Correction signal: demoted ${relPath} confidence ${current} → ${demoted}`);
+        writeMemoryFile(filePath, { ...file.data, confidence: demoted }, file.body);
+        console.error(`[consolidation] Correction: demoted file ${relPath} ${current} → ${demoted}`);
+      }
+    }
+    // Pinecone records (V3 ids)
+    for (const id of signal.ids || []) {
+      const record = retrievedRecords[id];
+      if (!record) continue;
+      const current = record.confidence || 'medium';
+      const demoted = demoteConfidence(current);
+      if (demoted !== current) {
+        pineconeConfidenceUpdates[id] = { ...record, confidence: demoted };
+        console.error(`[consolidation] Correction: queued Pinecone demote ${id} ${current} → ${demoted}`);
       }
     }
   }
 }
 
-// Apply approval signals: promote confidence of affected files.
-function applyApprovals(approvals) {
+// Apply approval signals: promote confidence of affected files and Pinecone records.
+function applyApprovals(approvals, retrievedRecords = {}) {
   if (!approvals || approvals.length === 0) return;
   for (const signal of approvals) {
+    // File-based (legacy paths)
     for (const relPath of signal.paths || []) {
       const filePath = join(MEMORY_DIR, relPath);
       if (!existsSync(filePath)) continue;
@@ -125,11 +139,57 @@ function applyApprovals(approvals) {
       const current = file.data.confidence || 'medium';
       const promoted = promoteConfidence(current);
       if (promoted !== current) {
-        const updated = { ...file.data, confidence: promoted };
-        writeMemoryFile(filePath, updated, file.body);
-        console.error(`[consolidation] Approval signal: promoted ${relPath} confidence ${current} → ${promoted}`);
+        writeMemoryFile(filePath, { ...file.data, confidence: promoted }, file.body);
+        console.error(`[consolidation] Approval: promoted file ${relPath} ${current} → ${promoted}`);
       }
     }
+    // Pinecone records (V3 ids)
+    for (const id of signal.ids || []) {
+      const record = retrievedRecords[id];
+      if (!record) continue;
+      const current = record.confidence || 'medium';
+      const promoted = promoteConfidence(current);
+      if (promoted !== current) {
+        pineconeConfidenceUpdates[id] = { ...record, confidence: promoted };
+        console.error(`[consolidation] Approval: queued Pinecone promote ${id} ${current} → ${promoted}`);
+      }
+    }
+  }
+}
+
+// Flush all queued Pinecone confidence updates as a single upsert batch.
+async function flushPineconeConfidenceUpdates() {
+  const records = Object.entries(pineconeConfidenceUpdates).map(([id, fields]) => ({
+    id,
+    text: fields.text,
+    type: fields.type || 'feedback',
+    domain: fields.domain || 'general',
+    project: fields.project || 'all',
+    salience: fields.salience || 'medium',
+    confidence: fields.confidence,
+  }));
+  if (records.length === 0 || !PINECONE_API_KEY) return;
+  try {
+    const response = await fetch(
+      `${PINECONE_HOST}/records/namespaces/${PINECONE_NAMESPACE}`,
+      {
+        method: 'POST',
+        headers: {
+          'Api-Key': PINECONE_API_KEY,
+          'Content-Type': 'application/json',
+          'X-Pinecone-API-Version': '2025-04',
+        },
+        body: JSON.stringify({ records }),
+      }
+    );
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[consolidation] Reflexion upsert error: ${err}`);
+    } else {
+      console.error(`[consolidation] Reflexion: updated confidence for ${records.length} Pinecone record(s)`);
+    }
+  } catch (err) {
+    console.error(`[consolidation] Reflexion upsert failed: ${err.message}`);
   }
 }
 
@@ -427,6 +487,7 @@ async function main() {
   // Read session tag set + correction/approval signals written by retrieval hook.
   let sessionTagSet = new Set();
   let retrievedPaths = [];
+  let retrievedRecords = {};
   let corrections = [];
   let approvals = [];
   try {
@@ -437,6 +498,7 @@ async function main() {
       } else {
         (sessionData.tags || []).forEach(t => sessionTagSet.add(t.toLowerCase()));
         retrievedPaths = sessionData.retrievedPaths || [];
+        retrievedRecords = sessionData.retrievedRecords || {};
         corrections = sessionData.corrections || [];
         approvals = sessionData.approvals || [];
       }
@@ -458,14 +520,14 @@ async function main() {
   const threshold = OUTCOME_THRESHOLD[outcome] ?? 1;
   console.error(`[consolidation] Session outcome: ${outcome} (extraction threshold: ${threshold})`);
 
-  // Apply correction/approval confidence signals.
+  // Apply correction/approval confidence signals (files + Pinecone).
   if (corrections.length > 0) {
     console.error(`[consolidation] Applying ${corrections.length} correction signal(s)`);
-    applyCorrections(corrections);
+    applyCorrections(corrections, retrievedRecords);
   }
   if (approvals.length > 0) {
     console.error(`[consolidation] Applying ${approvals.length} approval signal(s)`);
-    applyApprovals(approvals);
+    applyApprovals(approvals, retrievedRecords);
   }
 
   // For blocked_unresolved sessions: write a draft episodic for follow-up.
@@ -514,6 +576,12 @@ async function main() {
   if (newClaims.length > 0) {
     console.error(`[consolidation] Phase 5: upserting ${newClaims.length} new claim(s) to Pinecone`);
     await upsertClaimsToPinecone(newClaims);
+  }
+
+  const reflexionCount = Object.keys(pineconeConfidenceUpdates).length;
+  if (reflexionCount > 0) {
+    console.error(`[consolidation] Reflexion: flushing ${reflexionCount} confidence update(s) to Pinecone`);
+    await flushPineconeConfidenceUpdates();
   }
 
   console.error('[consolidation] Done');
