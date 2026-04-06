@@ -7,7 +7,7 @@ source: observed
 status: confirmed
 related: []
 created: 2026-04-05
-last-accessed: 2026-04-05
+last-accessed: 2026-04-06
 ---
 
 Project at `C:\Users\Jon Berg\Projects\oficio-taller-marketing`.

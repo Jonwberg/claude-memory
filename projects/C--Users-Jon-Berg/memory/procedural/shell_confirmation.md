@@ -8,7 +8,7 @@ confidence: high
 source: confirmed
 status: confirmed
 created: 2026-04-05
-last-accessed: 2026-04-05
+last-accessed: 2026-04-06
 ---
 
 ## Rule: Confirm Shell Before Path-Sensitive Advice

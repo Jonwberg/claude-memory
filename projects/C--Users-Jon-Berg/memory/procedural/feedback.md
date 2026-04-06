@@ -8,7 +8,7 @@ status: confirmed
 trigger: [command-not-found, not-found, scripts, appdata, pip-install, concurrent, locked, database-locked, null, sku, getattr, property, lazy-import, git-push, git-auth, credential, windows-credential, push-hangs]
 related: []
 created: 2026-03-02
-last-accessed: 2026-04-04
+last-accessed: 2026-04-06
 ---
 
 After solving a tricky problem (especially after failed attempts and iteration), save the learning automatically as a `## Solution:` entry below. Do not ask the user first.
@@ -64,3 +64,25 @@ Do not ask the user to run git commands in their terminal. Just run them directl
 
 **Why:** User explicitly instructed this.
 **How to apply:** All git operations including push, pull, fetch.
+
+```
+CLAUDE.md (global behavioral rules — always loaded)
+    ↓
+Pinecone index: "claude-memory" (cloud vector store — shareable brain)
+    ↓ semantic search on every prompt via retrieval-hook.mjs
+MEMORY.md (shrinks to 5–10 pinned always-load entries only)
+    ↓
+Project CLAUDE.md (local overrides)
+```
+
+Reflexion loop (Proposal A) gets built into the Stop hook — corrections upsert directly to Pinecone.
+
+```
+CLAUDE.md (global behavioral rules — always loaded)
+    ↓
+Pinecone index: "claude-memory" (cloud vector store — shareable brain)
+    ↓ semantic search on every prompt via retrieval-hook.mjs
+MEMORY.md (shrinks to 5–10 pinned always-load entries only)
+    ↓
+Project CLAUDE.md (local overrides)
+```

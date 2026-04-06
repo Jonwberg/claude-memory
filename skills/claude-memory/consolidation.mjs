@@ -1,7 +1,48 @@
-// consolidation.mjs
-// Stop hook — consolidates episodic notes into semantic/procedural layers.
+// consolidation.mjs v3
+// Stop hook — consolidates episodic notes into semantic/procedural layers,
+// and upserts new learnings to Pinecone.
 // Runs after each session via the Stop hook in settings.json.
 // No stdin input required; reads memory directory directly.
+
+const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
+const PINECONE_HOST = 'https://claude-memory-hr7dpkh.svc.aped-4627-b74a.pinecone.io';
+const PINECONE_NAMESPACE = 'memories';
+
+// Upsert newly extracted claims to Pinecone so they're retrievable next session.
+async function upsertClaimsToPinecone(claims) {
+  if (!PINECONE_API_KEY || claims.length === 0) return;
+  const records = claims.map(c => ({
+    id: `learned-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    text: c.text,
+    type: c.type,
+    domain: c.domain || 'general',
+    project: c.project || 'all',
+    salience: c.salience || 'medium',
+  }));
+
+  try {
+    const response = await fetch(
+      `${PINECONE_HOST}/records/namespaces/${PINECONE_NAMESPACE}`,
+      {
+        method: 'POST',
+        headers: {
+          'Api-Key': PINECONE_API_KEY,
+          'Content-Type': 'application/json',
+          'X-Pinecone-API-Version': '2025-04',
+        },
+        body: JSON.stringify({ records }),
+      }
+    );
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[consolidation] Pinecone upsert error: ${err}`);
+    } else {
+      console.error(`[consolidation] Upserted ${records.length} new claim(s) to Pinecone`);
+    }
+  } catch (err) {
+    console.error(`[consolidation] Pinecone upsert failed: ${err.message}`);
+  }
+}
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, renameSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
@@ -11,6 +52,9 @@ import {
   readMemoryFile, writeMemoryFile, scanAllMemoryFiles,
   tagOverlap, todayUTC, addDays, isExpired, buildMemoryIndex, writeIndexJson
 } from './memory-utils.mjs';
+
+// Track claims extracted this session for Pinecone upsert
+const newClaims = [];
 
 // --- Session outcome classification ---
 
@@ -222,6 +266,7 @@ function absorbToProcedural(claim) {
   if (isDuplicate(claim, file.body)) return;
   const newBody = file.body.trimEnd() + '\n\n' + claim;
   writeMemoryFile(feedbackPath, file.data, newBody);
+  newClaims.push({ text: claim, type: 'feedback', domain: 'general', project: 'all' });
 }
 
 function absorbToSemantic(claim, episodicTags) {
@@ -254,6 +299,7 @@ function absorbToSemantic(claim, episodicTags) {
       }, claim);
     }
   }
+  newClaims.push({ text: claim, type: 'semantic', domain: episodicTags[0] || 'general', project: 'all' });
 }
 
 // Phase 2: Decay pass — absorb and delete expired episodic files.
@@ -464,6 +510,11 @@ async function main() {
 
   console.error('[consolidation] Phase 4: rebuilding indexes');
   phase4();
+
+  if (newClaims.length > 0) {
+    console.error(`[consolidation] Phase 5: upserting ${newClaims.length} new claim(s) to Pinecone`);
+    await upsertClaimsToPinecone(newClaims);
+  }
 
   console.error('[consolidation] Done');
 }

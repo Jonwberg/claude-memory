@@ -1,6 +1,7 @@
 # Memory Index
 
 ## Semantic
+- [memory-v3-pinecone-vector-search.md](semantic/memory-v3-pinecone-vector-search.md) `memory-v3 pinecone vector-search architecture` — Memory V3 live as of 2026-04-06.
 - [patterns.md](semantic/patterns.md) `shopify sqlite python imports scraping pagination locking` — SQLite locks if multiple processes write concurrently — run scrapers sequentiall
 - [project-competitor-intel.md](semantic/project-competitor-intel.md) `competitor-intel shopify sqlite scraping python cli` — Project at `C:\Users\Jon Berg\Projects\competitor_intel`.
 - [project-oficio-taller.md](semantic/project-oficio-taller.md) `oficio-taller marketing workflow-automation github campaigns press` — Project at `C:\Users\Jon Berg\Projects\oficio-taller-marketing`.
@@ -16,6 +17,8 @@
 - [feedback_hypothesis_testing.md](procedural/feedback_hypothesis_testing.md) `` — A failed or inconclusive hypothesis is not a failure — it is an opportunity to l
 
 ## Episodic
+- [2026-04-06-memory-v3-wip.md](episodic/2026-04-06-memory-v3-wip.md) `memory-v3 pinecone vector-search architecture wip` — WIP — Memory V3 Build (2026-04-06)
 - [2026-04-05-wip.md](episodic/2026-04-05-wip.md) `c: users jon berg projects competitor intel scraper` — WIP Checkpoint — 2026-04-05
+- [2026-04-06-wip.md](episodic/2026-04-06-wip.md) `c: users jon berg projects oficio taller marketing claude` — WIP Checkpoint — 2026-04-06
 
 ## Reference
