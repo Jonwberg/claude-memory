@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { fileURLToPath } from 'url';
 
 const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
 const PINECONE_HOST = 'https://claude-memory-hr7dpkh.svc.aped-4627-b74a.pinecone.io';
@@ -33,32 +34,39 @@ const APPROVAL_PATTERNS = [
   /\bwell done\b/i,
 ];
 
-function detectSignal(prompt) {
+export function detectSignal(prompt) {
   if (CORRECTION_PATTERNS.some(p => p.test(prompt))) return 'correction';
   if (APPROVAL_PATTERNS.some(p => p.test(prompt))) return 'approval';
   return null;
 }
 
 async function searchPinecone(queryText) {
-  const response = await fetch(
-    `${PINECONE_HOST}/records/namespaces/${PINECONE_NAMESPACE}/search`,
-    {
-      method: 'POST',
-      headers: {
-        'Api-Key': PINECONE_API_KEY,
-        'Content-Type': 'application/json',
-        'X-Pinecone-API-Version': '2025-04',
-      },
-      body: JSON.stringify({
-        query: {
-          inputs: { text: queryText },
-          top_k: TOP_K,
-          filter: { confidence: { '$ne': 'low' } },
+  let response;
+  try {
+    response = await fetch(
+      `${PINECONE_HOST}/records/namespaces/${PINECONE_NAMESPACE}/search`,
+      {
+        method: 'POST',
+        headers: {
+          'Api-Key': PINECONE_API_KEY,
+          'Content-Type': 'application/json',
+          'X-Pinecone-API-Version': '2025-04',
         },
-        fields: ['text', 'type', 'domain', 'project', 'salience', 'confidence'],
-      }),
-    }
-  );
+        body: JSON.stringify({
+          query: {
+            inputs: { text: queryText },
+            top_k: TOP_K,
+            filter: { confidence: { '$ne': 'low' } },
+          },
+          fields: ['text', 'type', 'domain', 'project', 'salience', 'confidence'],
+        }),
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+  } catch (err) {
+    process.stderr.write(`retrieval-hook: Pinecone fetch failed: ${err.message}\n`);
+    return [];
+  }
 
   if (!response.ok) {
     const err = await response.text();
@@ -127,7 +135,10 @@ async function main() {
   }));
 }
 
-main().catch(err => {
-  process.stderr.write('retrieval-hook error: ' + err.message + '\n');
-  process.stdout.write(JSON.stringify({ additionalContext: '' }));
-});
+// Only run main() when this file is executed directly (as the hook), not when imported by tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch(err => {
+    process.stderr.write('retrieval-hook error: ' + err.message + '\n');
+    process.stdout.write(JSON.stringify({ additionalContext: '' }));
+  });
+}

@@ -79,7 +79,11 @@ export function scanAllMemoryFiles() {
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
       if (!f.endsWith('.md')) continue;
-      files.push(readMemoryFile(join(dir, f)));
+      try {
+        files.push(readMemoryFile(join(dir, f)));
+      } catch (err) {
+        console.error(`[memory-utils] scanAllMemoryFiles: skipping ${layer}/${f}: ${err.message}`);
+      }
     }
   }
   return files;

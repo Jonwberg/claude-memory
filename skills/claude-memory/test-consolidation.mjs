@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { tagOverlap, parseFrontmatter, serializeFrontmatter, buildMemoryIndex } from './memory-utils.mjs';
-import { isBehavioral, findBestSemanticFile, classifyClaim } from './consolidation.mjs';
+import { isBehavioral, findBestSemanticFile, classifyClaim, extractClaims } from './consolidation.mjs';
 
 // ---- Setup temp directory ----
 const TMP = join(tmpdir(), 'claude-memory-test-' + Date.now());
@@ -72,6 +72,47 @@ assert.ok(idx.includes('## Episodic'), 'has Episodic section');
 assert.ok(idx.includes('## Reference'), 'has Reference section');
 assert.ok(idx.includes('`shopify sqlite`'), 'tags formatted correctly');
 console.log('✓ buildMemoryIndex');
+
+// Test 6: extractClaims skips wip-checkpoint activity-log lines
+const pureActivityLog = `# WIP Checkpoint
+
+- 18:48 Edit: \`C:\\path\\to\\file.py\` — edited — some content
+- 18:49 Write: \`C:\\other.py\` — import sys
+- 10:20 Write: \`C:\\third.py\` — """docstring"""
+`;
+assert.strictEqual(extractClaims(pureActivityLog).length, 0, 'no claims from pure activity-log paragraph');
+
+const mixed = `Today I learned that pdfplumber requires page-level extraction for tables.
+
+- 18:48 Edit: \`file.py\` — change
+- 18:49 Write: \`other.py\` — content
+
+The reconciliation step caught three off-by-one errors that summed to fee-like amounts.
+`;
+const mixedClaims = extractClaims(mixed);
+assert.ok(mixedClaims.some(c => c.includes('pdfplumber')), 'absorbs prose claim before activity log');
+assert.ok(mixedClaims.some(c => c.includes('reconciliation')), 'absorbs prose claim after activity log');
+assert.ok(!mixedClaims.some(c => /\d{2}:\d{2}\s+(Write|Edit):/.test(c)), 'never includes activity-log lines');
+console.log('✓ extractClaims skips activity-log entries');
+
+// Test 7: extractClaims skips markdown headings (so "# WIP Checkpoint — date" doesn't become a claim)
+const withHeadings = `# WIP Checkpoint — 2026-05-05
+
+## Notes (manual)
+
+This is a real prose claim that should be absorbed and pushed to Pinecone.
+
+### Subheading
+
+Another claim that follows a subheading.
+`;
+const headingClaims = extractClaims(withHeadings);
+assert.ok(!headingClaims.some(c => c.includes('WIP Checkpoint')), 'skips top-level heading');
+assert.ok(!headingClaims.some(c => c.includes('Notes (manual)')), 'skips section heading');
+assert.ok(!headingClaims.some(c => c.includes('Subheading')), 'skips subheading');
+assert.ok(headingClaims.some(c => c.includes('real prose claim')), 'absorbs prose under heading');
+assert.ok(headingClaims.some(c => c.includes('Another claim')), 'absorbs prose under subheading');
+console.log('✓ extractClaims skips markdown headings');
 
 // Cleanup
 rmSync(TMP, { recursive: true });
