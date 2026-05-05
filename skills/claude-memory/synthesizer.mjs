@@ -157,9 +157,16 @@ Given the lineage and this result, confidence in the root question being answera
     }]
   });
 
-  const raw = response.content[0].text;
+  const raw = response.content?.[0]?.text;
+  if (!raw) {
+    throw new Error('synthesizer: API returned empty content (refusal, tool-use block, or quota)');
+  }
   const cleaned = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    throw new Error(`synthesizer: API returned non-JSON: ${raw.slice(0, 200)}`);
+  }
 }
 
 function writeSynthesis(id, synthesis) {
