@@ -3,7 +3,7 @@
 // Input: JSON on stdin with { prompt, session_id }
 // Output: JSON to stdout with { additionalContext }
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -106,12 +106,17 @@ async function main() {
       sessionData.retrievedRecords[hit._id] = { ...hit.fields, id: hit._id };
     }
     const signal = detectSignal(prompt);
+    // Only attribute correction/approval signals to the top-1 retrieved record.
+    // Crediting all 5 hits punishes/rewards records the user wasn't actually reacting to.
     if (signal === 'correction' && hitIds.length > 0) {
-      sessionData.corrections.push({ ids: hitIds, prompt: prompt.slice(0, 120) });
+      sessionData.corrections.push({ ids: hitIds.slice(0, 1), prompt: prompt.slice(0, 120) });
     } else if (signal === 'approval' && hitIds.length > 0) {
-      sessionData.approvals.push({ ids: hitIds, prompt: prompt.slice(0, 120) });
+      sessionData.approvals.push({ ids: hitIds.slice(0, 1), prompt: prompt.slice(0, 120) });
     }
-    writeFileSync(SESSION_TAGS_FILE, JSON.stringify(sessionData), 'utf-8');
+    // Atomic write so concurrent prompts can't read a half-written file.
+    const tmp = SESSION_TAGS_FILE + '.tmp';
+    writeFileSync(tmp, JSON.stringify(sessionData), 'utf-8');
+    renameSync(tmp, SESSION_TAGS_FILE);
   } catch (err) {
     process.stderr.write('retrieval-hook: failed to write session data: ' + err.message + '\n');
   }

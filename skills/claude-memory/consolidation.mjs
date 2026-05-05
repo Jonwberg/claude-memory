@@ -12,7 +12,7 @@ const PINECONE_NAMESPACE = 'memories';
 async function upsertClaimsToPinecone(claims) {
   if (!PINECONE_API_KEY || claims.length === 0) return;
   const records = claims.map(c => ({
-    _id: `learned-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    _id: `learned-${randomUUID()}`,
     text: c.text,
     type: c.type,
     domain: c.domain || 'general',
@@ -49,6 +49,7 @@ async function upsertClaimsToPinecone(claims) {
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, renameSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import {
   MEMORY_DIR, MEMORY_MD, MEMORY_TMP, INDEX_JSON, INDEX_TMP,
   SESSION_TAGS_FILE, SESSION_ERRORS_FILE,
